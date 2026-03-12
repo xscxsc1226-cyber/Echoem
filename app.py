@@ -20,62 +20,71 @@ st.set_page_config(page_title="Echoem", page_icon="🪽", layout="wide", initial
 # 关键修复：使用 JavaScript 强制设置 viewport（因为 Streamlit 不允许注入 head meta）
 st.markdown("""
 <script>
-    // 动态添加 viewport meta 标签（如果还没有的话）
-    if (!document.querySelector('meta[name="viewport"]')) {
-        var meta = document.createElement('meta');
+    // 关键修复1：强制viewport，优先级最高（覆盖Streamlit原生）
+    const viewport = document.querySelector('meta[name="viewport"]');
+    if (viewport) {
+        viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+    } else {
+        const meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-        document.getElementsByTagName('head')[0].appendChild(meta);
+        document.head.insertBefore(meta, document.head.firstChild);
     }
-    
-    // 强制设置 body 宽度为设备宽度
-    document.body.style.width = '100vw';
-    document.body.style.maxWidth = '100%';
-    document.body.style.overflowX = 'hidden';
-    
-    // 针对 Streamlit 主容器
-    var style = document.createElement('style');
-    style.textContent = `
-        /* 强制移动端宽度适配 */
-        @media (max-width: 768px) {
-            .stApp {
-                width: 100vw !important;
-                max-width: 100% !important;
-            }
-            .block-container {
-                max-width: 100% !important;
-                padding-left: 8px !important;
-                padding-right: 8px !important;
-            }
-            /* 防止横向滚动 */
-            body {
-                overflow-x: hidden !important;
-                position: relative !important;
-            }
-        }
-    `;
-    document.head.appendChild(style);
-</script>
 
+    // 关键修复2：页面加载后立即强制重绘，解决Streamlit布局延迟溢出
+    window.addEventListener('load', () => {
+        document.body.style.width = '100vw';
+        document.body.style.overflowX = 'hidden';
+        // 强制重绘导航栏横向块
+        const horizontalBlocks = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
+        horizontalBlocks.forEach(blk => {
+            blk.style.width = '100vw';
+            blk.style.overflowX = 'hidden';
+        });
+    });
+
+    // 监听窗口大小变化，实时约束
+    window.addEventListener('resize', () => {
+        document.body.style.width = '100vw';
+        document.body.style.overflowX = 'hidden';
+    });
+</script>
 <style>
-    /* 1. 基础重置 - 彻底清理原生样式 */
+    /* 1. 基础重置 - 彻底杜绝横向溢出 */
+    html, body {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+    }
+    * {
+        box-sizing: border-box !important;
+        max-width: 100vw !important; /* 所有元素最大宽度不超过屏幕 */
+    }
     [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer {
         display: none !important;
     }
     .block-container { 
-        padding-top: 1rem !important; 
+        padding-top: 0.8rem !important; 
         padding-bottom: 80px !important; 
-        max-width: 650px; 
+        max-width: 100vw !important; /* 核心：主容器宽度100vw */
+        width: 100% !important;
         margin: 0 auto !important;
+        padding-left: 6px !important;  /* 移动端收紧内边距 */
+        padding-right: 6px !important;
     }
-
-    /* 2. 整体视觉风格 - 更贴近真实聊天APP */
+    /* 2. 整体视觉风格 - 保留原设计 */
     .stApp { 
         background-color: #F0F2F5; 
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
     }
     
-    /* 3. 底部导航栏 - 更精致的固定导航 */
+    /* 3. 底部导航栏 - 保留横向布局，强制适配手机 */
     .nav-wrapper {
         position: fixed;
         bottom: 0;
@@ -83,31 +92,34 @@ st.markdown("""
         right: 0;
         background: #FFFFFF;
         border-top: 1px solid #E5E7EB;
-        z-index: 1000;
-        padding: 8px 0;
+        z-index: 9999; /* 提高层级，避免被遮挡 */
+        padding: 6px 0 !important;
         box-shadow: 0 -2px 10px rgba(0,0,0,0.03);
+        width: 100vw !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
     }
-
-    /* 4. 聊天气泡 - 优化视觉层次和交互感 */
+    /* 4. 聊天气泡 - 移动端进一步优化宽度 */
     .chat-bubble-row { 
         display: flex; 
-        margin-bottom: 16px; 
-        align-items: center;
+        margin-bottom: 12px !important; 
+        align-items: flex-end !important; /* 气泡与头像底部对齐，更自然 */
         position: relative;
+        width: 100% !important;
     }
     .chat-bubble-row.me { justify-content: flex-end; }
     .chat-bubble-avatar { 
-        width: 40px; 
-        height: 40px; 
+        width: 34px !important; /* 移动端固定小头像 */
+        height: 34px !important;
         border-radius: 50%;
         overflow: hidden; 
-        margin: 0 8px; 
+        margin: 0 6px !important; /* 收紧头像边距 */
         flex-shrink: 0; 
         background-color: #F3F4F6;
         display: flex; 
         align-items: center; 
         justify-content: center; 
-        font-size: 18px;
+        font-size: 16px !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
     .chat-bubble-avatar img { 
@@ -116,45 +128,50 @@ st.markdown("""
         object-fit: cover; 
     }
     .chat-bubble-content { 
-        max-width: 70%; 
-        padding: 14px 18px; 
-        border-radius: 20px; 
-        font-size: 15px; 
-        line-height: 1.45;
+        max-width: 85% !important; /* 移动端气泡占比提高，避免留白 */
+        padding: 12px 16px !important; /* 收紧气泡内边距 */
+        border-radius: 18px !important;
+        font-size: 14px !important; /* 移动端小字，适配小屏 */
+        line-height: 1.4;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         position: relative;
+        word-wrap: break-word !important; /* 强制换行，避免长文本撑宽 */
+        word-break: break-all !important;
     }
     .chat-bubble-other { 
         background-color: #FFFFFF; 
         border: 1px solid #E5E7EB;
-        border-bottom-left-radius: 6px;
+        border-bottom-left-radius: 4px !important;
         color: #111827;
     }
     .chat-bubble-me { 
         background-color: #3B82F6;
         color: #FFFFFF;
-        border-bottom-right-radius: 6px;
+        border-bottom-right-radius: 4px !important;
     }
     
-    /* 5. 朋友圈卡片 */
+    /* 5. 朋友圈卡片 - 移动端适配 */
     .moment-card { 
         background: transparent; 
-        padding: 12px 0 16px 0; 
+        padding: 10px 0 14px 0 !important; 
         border-radius: 0; 
         margin-bottom: 0; 
         border-bottom: 1px solid #E5E7EB;
         box-shadow: none;
+        width: 100% !important;
     }
     .comment-area { 
         background: transparent; 
-        padding: 8px 0 0 0; 
-        margin-top: 8px; 
-        font-size: 14px; 
+        padding: 6px 0 0 0 !important; 
+        margin-top: 6px !important; 
+        font-size: 13px !important;
+        width: 100% !important;
     }
     .comment-item { 
-        padding: 8px 0; 
+        padding: 6px 0 !important; 
         border-bottom: 1px solid #E5E5E5;
         line-height: 1.4;
+        word-wrap: break-word !important;
     }
     .comment-item:last-child { border-bottom: none; }
     .comment-user { 
@@ -162,25 +179,45 @@ st.markdown("""
         font-weight: 500; 
         margin-right: 4px; 
     }
-
-    /* 6. 底部导航按钮 */
+    /* 6. 底部导航按钮 - 核心：横向均分，不溢出 */
+    .nav-wrapper [data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: space-around !important; /* 按钮均匀分布 */
+        width: 100vw !important;
+        max-width: 100vw !important;
+        gap: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
+    }
+    .nav-wrapper [data-testid="column"] {
+        flex: 1 1 25% !important; /* 4个按钮，各占25% */
+        width: 25% !important;
+        max-width: 25% !important;
+        padding: 0 2px !important;
+        margin: 0 !important;
+    }
     .nav-wrapper .stButton>button {
-        border-radius: 12px !important;
-        padding: 8px 6px !important;
-        font-size: 12px !important;
+        border-radius: 10px !important;
+        padding: 6px 2px !important;
+        font-size: 10px !important; /* 移动端导航文字更小 */
         color: #6B7280 !important;
         background-color: transparent !important;
         border: none !important;
         box-shadow: none !important;
         font-weight: 500;
+        width: 100% !important;
+        white-space: nowrap !important; /* 文字不换行 */
+        text-align: center !important;
     }
     .nav-wrapper .stButton>button[kind="primary"] {
         background-color: #EFF6FF !important;
         color: #3B82F6 !important;
         font-weight: 600;
     }
-
-    /* 7. 普通按钮 */
+    /* 7. 普通按钮 - 保留原设计 */
     .stButton>button { 
         border-radius: 0 !important; 
         text-align: left !important;
@@ -192,250 +229,136 @@ st.markdown("""
         color: #111827 !important;
     }
     .stButton>button:hover { background-color: #F9FAFB !important; }
-
-    /* 8. 转账卡片 */
+    /* 8. 转账卡片 - 移动端适配，避免撑宽 */
     .transfer-card {
         background: linear-gradient(135deg, #F59E0B, #FBBF24);
-        border-radius: 18px;
-        padding: 12px 16px;
-        min-width: 220px;
+        border-radius: 16px !important;
+        padding: 10px 14px !important;
+        min-width: 180px !important; /* 减小最小宽度 */
+        max-width: 90% !important; /* 最大宽度不超过90%屏幕 */
         color: #FFFFFF;
         display: flex;
         flex-direction: column;
         box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        word-wrap: break-word !important;
     }
-    .transfer-title { font-size: 12px; opacity: 0.9; margin-bottom: 2px; }
-    .transfer-amount { font-size: 24px; font-weight: 700; margin: 4px 0; }
-    .transfer-note { font-size: 13px; opacity: 0.95; margin-bottom: 4px; }
-    .transfer-status { font-size: 11px; margin-top: 4px; opacity: 0.9; text-align: right; }
+    .transfer-title { font-size: 11px !important; opacity: 0.9; margin-bottom: 2px; }
+    .transfer-amount { font-size: 20px !important; font-weight: 700; margin: 4px 0; }
+    .transfer-note { font-size: 12px !important; opacity: 0.95; margin-bottom: 4px; }
+    .transfer-status { font-size: 10px !important; margin-top: 4px; opacity: 0.9; text-align: right; }
     .transfer-card.received {
         background: linear-gradient(135deg, #FEF3C7, #FDE68A);
         color: #92400E;
     }
-
-    /* 9. 登录/注册页面 */
-    .auth-container { max-width: 400px; margin: 0 auto; padding: 40px 20px; }
-    .auth-title { font-size: 28px; font-weight: 700; color: #111827; margin-bottom: 8px; }
-    .auth-subtitle { color: #6B7280; margin-bottom: 30px; }
-
-    /* 10. 消息列表项 */
+    /* 9. 登录/注册页面 - 移动端适配 */
+    .auth-container { 
+        max-width: 100vw !important; 
+        width: 90% !important;
+        margin: 0 auto !important;
+        padding: 20px 10px !important; /* 收紧登录页内边距 */
+    }
+    .auth-title { font-size: 24px !important; font-weight: 700; color: #111827; margin-bottom: 8px; }
+    .auth-subtitle { color: #6B7280; margin-bottom: 20px !important; font-size: 14px !important; }
+    /* 10. 消息列表项 - 核心：杜绝溢出，适配手机 */
     .chat-item {
         display: flex;
-        padding: 12px 16px;
+        padding: 8px 6px !important; /* 收紧消息列表内边距 */
         background: #FFFFFF;
         border-bottom: 0.5px solid #E5E5E7;
         transition: background 0.2s;
         cursor: pointer;
-        width: 100% !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
         box-sizing: border-box !important;
+        overflow: hidden !important;
     }
     .chat-item:active { background-color: #F2F2F7; }
-
-    /* 小箭头按钮 */
+    /* 小箭头按钮 - 移动端适配 */
     .chat-arrow .stButton>button {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
-        width: 32px !important;
-        height: 32px !important;
+        width: 28px !important;
+        height: 28px !important;
         padding: 0 !important;
-        border-radius: 16px !important;
-        font-size: 18px !important;
+        border-radius: 14px !important;
+        font-size: 16px !important;
         color: #9CA3AF !important;
     }
     .chat-arrow .stButton>button:hover {
         background: #F3F4F6 !important;
         color: #6B7280 !important;
     }
-
-    /* ================= 关键：移动端适配优化 ================= */
-    @media (max-width: 768px) {
-        /* 强制页面宽度为设备宽度，防止溢出 */
-        html, body {
-            width: 100vw !important;
-            max-width: 100% !important;
-            overflow-x: hidden !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        
-        /* 主容器宽度适配 */
-        .block-container {
-            max-width: 100% !important;
-            width: 100% !important;
-            padding-left: 8px !important;
-            padding-right: 8px !important;
-            padding-bottom: 100px !important;
-            margin: 0 !important;
-        }
-
-        /* Streamlit 主容器 */
-        .stApp {
-            width: 100% !important;
-            max-width: 100% !important;
-            overflow-x: hidden !important;
-        }
-
-        /* 强制所有 columns 保持横向排列（导航栏关键） */
-        div[data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            align-items: center !important;
-            width: 100% !important;
-            gap: 0 !important;
-            max-width: 100% !important;
-        }
-        
-        /* 均匀分布列 */
-        div[data-testid="column"] {
-            width: auto !important;
-            flex: 1 1 0% !important;
-            min-width: 0 !important;
-            padding: 0 2px !important;
-            max-width: 100% !important;
-        }
-        
-        /* 导航栏按钮适配 */
-        div[data-testid="column"] button {
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-            font-size: 11px !important;
-            width: 100% !important;
-            min-width: 0 !important;
-        }
-
-        /* 聊天气泡宽度优化 */
-        .chat-bubble-content {
-            max-width: 82% !important;
-            font-size: 14px !important;
-        }
-
-        /* 消息列表卡片缩紧 */
-        .chat-item {
-            padding: 10px 8px !important;
-            width: 100% !important;
-            max-width: 100vw !important;
-        }
-
-        /* 头像缩小 */
-        .chat-bubble-avatar {
-            width: 34px !important;
-            height: 34px !important;
-        }
-
-        /* 导航栏更紧凑 */
-        .nav-wrapper {
-            padding: 6px 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            width: 100% !important;
-        }
-        .nav-wrapper .stButton>button {
-            font-size: 11px !important;
-            padding: 6px 2px !important;
-        }
-        
-        /* 修复消息列表溢出问题 */
-        .chat-list-item {
-            width: 100% !important;
-            max-width: 100vw !important;
-            overflow: hidden !important;
-        }
-        
-        /* 强制所有元素不溢出 */
-        * {
-            max-width: 100vw !important;
-        }
-    }
-
-    /* 超小屏幕额外优化（如iPhone SE） */
-    @media (max-width: 375px) {
-        .block-container {
-            padding-left: 6px !important;
-            padding-right: 6px !important;
-        }
-        
-        .chat-bubble-content {
-            max-width: 85% !important;
-            padding: 12px 14px !important;
-            font-size: 13px !important;
-        }
-        
-        .nav-wrapper .stButton>button {
-            font-size: 10px !important;
-        }
-        
-        .chat-item {
-            padding: 8px 6px !important;
-        }
-    }
-
-    /* 11. 收款按钮 */
+    /* 11. 收款按钮 - 移动端适配 */
     .receive-btn {
         background-color: #FFFFFF !important;
         color: #F59E0B !important;
         border: 1px solid #F59E0B !important;
-        border-radius: 8px !important;
-        padding: 4px 12px !important;
-        font-size: 13px !important;
-        margin-top: 8px !important;
+        border-radius: 6px !important;
+        padding: 3px 10px !important;
+        font-size: 12px !important;
+        margin-top: 6px !important;
         width: auto !important;
     }
-
-    /* 12. 发现页互动工具栏 */
+    /* 12. 发现页互动工具栏 - 移动端适配 */
     .interaction-toolbar {
         display: flex;
         align-items: center;
         justify-content: flex-start;
-        gap: 15px;
-        margin-top: 12px;
-        margin-bottom: 15px;
+        gap: 8px !important; /* 收紧工具栏间距 */
+        margin-top: 10px !important;
+        margin-bottom: 12px !important;
+        width: 100% !important;
+        overflow-x: auto !important; /* 允许横向滚动，避免按钮挤压 */
+        padding-bottom: 4px !important;
     }
     .interaction-btn {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 6px 16px;
-        border-radius: 8px;
+        padding: 5px 12px !important;
+        border-radius: 6px !important;
         background-color: #F9FAFB;
         border: 1px solid #E5E7EB;
-        font-size: 13px;
+        font-size: 12px !important;
         color: #6B7280;
-        width: 90px;
-        height: 32px;
+        min-width: 70px !important; /* 减小最小宽度 */
+        height: 28px !important;
         text-align: center;
+        flex-shrink: 0; /* 按钮不收缩 */
     }
     .interaction-toolbar .stButton>button {
-        width: 90px !important;
-        height: 32px !important;
-        padding: 6px 16px !important;
-        border-radius: 8px !important;
+        min-width: 70px !important;
+        height: 28px !important;
+        padding: 5px 12px !important;
+        border-radius: 6px !important;
         background-color: #F9FAFB !important;
         border: 1px solid #E5E7EB !important;
-        font-size: 13px !important;
+        font-size: 12px !important;
         color: #6B7280 !important;
         text-align: center !important;
         justify-content: center !important;
+        flex-shrink: 0;
     }
     .comment-input-container {
-        margin-top: 10px;
-        padding-top: 10px;
+        margin-top: 8px !important;
+        padding-top: 8px !important;
         border-top: 1px solid #F3F4F6;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px !important;
+        width: 100% !important;
     }
     .comment-input { flex: 1; }
     .comment-send-btn {
-        width: 60px !important;
-        padding: 6px 0 !important;
-        border-radius: 8px !important;
+        width: 50px !important; /* 减小发送按钮宽度 */
+        padding: 5px 0 !important;
+        border-radius: 6px !important;
         background-color: #3B82F6 !important;
         color: white !important;
         text-align: center !important;
         justify-content: center !important;
     }
-
     /* 消息列表：摘要单行、与昵称左对齐 */
     .chat-list-item .stButton>button {
         padding: 0 !important;
@@ -445,7 +368,7 @@ st.markdown("""
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-        font-size: 14px !important;
+        font-size: 13px !important; /* 移动端小字 */
         color: #6B7280 !important;
         font-weight: normal !important;
         padding-left: 0 !important;
@@ -453,24 +376,54 @@ st.markdown("""
         border-radius: 0 !important;
     }
     
-    /* 记忆库展示样式 */
+    /* 记忆库展示样式 - 移动端适配 */
     .memory-bank-info {
         background: #F0F9FF;
         border: 1px solid #BAE6FD;
-        border-radius: 8px;
-        padding: 10px 14px;
-        margin: 10px 0;
-        font-size: 13px;
+        border-radius: 6px !important;
+        padding: 8px 12px !important;
+        margin: 8px 0 !important;
+        font-size: 12px !important;
         color: #0369A1;
+        width: 100% !important;
     }
     .memory-item {
         background: #F9FAFB;
-        border-radius: 6px;
-        padding: 8px 12px;
-        margin: 6px 0;
-        font-size: 13px;
+        border-radius: 4px !important;
+        padding: 6px 10px !important;
+        margin: 4px 0 !important;
+        font-size: 12px !important;
         color: #374151;
         border-left: 3px solid #3B82F6;
+        width: 100% !important;
+        word-wrap: break-word !important;
+    }
+
+    /* ===== 超小屏优化（iPhone SE/小屏安卓）===== */
+    @media (max-width: 375px) {
+        .block-container {
+            padding-left: 4px !important;
+            padding-right: 4px !important;
+        }
+        .chat-bubble-content {
+            max-width: 88% !important;
+            padding: 10px 12px !important;
+            font-size: 13px !important;
+        }
+        .nav-wrapper .stButton>button {
+            font-size: 9px !important;
+            padding: 4px 0 !important;
+        }
+        .chat-item {
+            padding: 6px 4px !important;
+        }
+        .transfer-card {
+            min-width: 160px !important;
+            padding: 8px 12px !important;
+        }
+        .transfer-amount {
+            font-size: 18px !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
