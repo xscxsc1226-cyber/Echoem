@@ -937,29 +937,34 @@ def render_chat_session():
         }}
         </style>''', unsafe_allow_html=True)
 
-    # 优化聊天头部：昵称区域收得更矮，并在昵称正下方预留“正在输入”提示
-    c1, c2, c3 = st.columns([0.8, 3.4, 0.8])
-    with c1:
-        st.button("⬅️", on_click=lambda: st.session_state.update({"view_mode":"main"}), type="tertiary", use_container_width=True)
-    with c2:
-        safe_char_name = safe_text(char.get("name", ""))
-        st.markdown(
-            f"<div style='text-align:center; margin:2px 0 0 0;'>"
-            f"<div style='font-size:16px; font-weight:600; color:#111827; line-height:1.15;'>{safe_char_name}</div>"
-            f"<div id='typing-indicator' style='font-size:11px; color:#9CA3AF; margin-top:1px; min-height:14px;'></div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-        # 在昵称容器内部占位“对方正在输入中...”
-        typing_placeholder = st.empty()
-    with c3:
-        st.button("⚙️", on_click=lambda: st.session_state.update({"view_mode":"edit_char"}), type="tertiary", use_container_width=True)
-    
-    # 更紧凑的分割线
+    # 顶部聊天头部使用纯 HTML，避免在手机端列布局被强制纵向堆叠
+    safe_char_name = safe_text(char.get("name", ""))
     st.markdown(
-        "<hr style='margin:4px 0 6px 0; border:none; border-top:1px solid #E5E7EB;'/>",
-        unsafe_allow_html=True
+        f"""
+        <div class="chat-header-bar" style="display:flex;align-items:center;justify-content:space-between;margin:2px 0 4px 0;">
+            <div style="flex:0 0 auto;">
+                <button onclick="window.location.search='?view=main'" style="
+                    border:none;background:#E5E7EB;border-radius:999px;width:32px;height:32px;
+                    display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;
+                ">⬅️</button>
+            </div>
+            <div style="flex:1 1 auto;text-align:center;">
+                <div style="font-size:16px;font-weight:600;color:#111827;line-height:1.15;">{safe_char_name}</div>
+                <div id="typing-indicator" style="font-size:11px;color:#9CA3AF;margin-top:1px;min-height:14px;"></div>
+            </div>
+            <div style="flex:0 0 auto;">
+                <button onclick="window.location.search='?view=edit_char'" style="
+                    border:none;background:#F3F4F6;border-radius:999px;width:32px;height:32px;
+                    display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;
+                ">⚙️</button>
+            </div>
+        </div>
+        <hr style='margin:4px 0 6px 0; border:none; border-top:1px solid #E5E7EB;'/>
+        """,
+        unsafe_allow_html=True,
     )
+    # Streamlit 内部逻辑仍然用 typing_placeholder 控制“对方正在输入中...”的文本
+    typing_placeholder = st.empty()
     
     # 消息循环
     user_av = get_avatar_display(st.session_state.user_profile.get("avatar"), "👤")
@@ -1665,18 +1670,33 @@ with main_content_container:
         elif st.session_state.active_tab == "我": 
             render_profile_page()
 
-# 固定底部导航栏渲染（确保在所有页面都显示）
-st.markdown('<div class="nav-wrapper">', unsafe_allow_html=True)
-cols = st.columns(4)
-nav_items = [("💬 消息", "Echoem"), ("👥 通讯录", "通讯录"), ("🌍 发现", "发现"), ("👤 我", "我")]
-for i, (label, tab_name) in enumerate(nav_items):
-    with cols[i]:
-        if st.button(
-            label, 
-            key=f"nav_{tab_name}", 
-            use_container_width=True, 
-            type="primary" if st.session_state.active_tab == tab_name else "tertiary"
-        ):
-            st.session_state.active_tab = tab_name
-            st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
+"""
+使用纯 HTML 渲染底部导航栏，避免在手机端列布局被强制纵向堆叠。
+点击时通过 URL 查询参数 nav_tab 控制当前激活的标签。
+"""
+current_tab = st.query_params.get("nav_tab", st.session_state.active_tab)
+if current_tab not in ["Echoem", "通讯录", "发现", "我"]:
+    current_tab = "Echoem"
+st.session_state.active_tab = current_tab
+
+nav_html = """
+<div class="nav-wrapper">
+  <div style="display:flex;align-items:center;justify-content:space-around;max-width:650px;margin:0 auto;">
+"""
+for label, tab_name in [("💬 消息", "Echoem"), ("👥 通讯录", "通讯录"), ("🌍 发现", "发现"), ("👤 我", "我")]:
+    active = "true" if current_tab == tab_name else "false"
+    nav_html += f"""
+    <a href="?nav_tab={tab_name}" style="flex:1;text-decoration:none;">
+      <div style="
+        text-align:center;
+        font-size:12px;
+        padding:4px 0;
+        color:{'#3B82F6' if active=='true' else '#6B7280'};
+        font-weight:{'600' if active=='true' else '500'};
+      ">
+        {label}
+      </div>
+    </a>
+    """
+nav_html += "</div></div>"
+st.markdown(nav_html, unsafe_allow_html=True)
