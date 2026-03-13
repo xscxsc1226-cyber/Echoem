@@ -113,11 +113,48 @@ st.markdown("""
     .chat-header-center-wrap { display: flex !important; align-items: center !important; justify-content: center !important; flex-direction: column !important; gap: 0 !important; min-height: 40px !important; text-align: center !important; overflow: hidden !important; }
     .chat-header-center-wrap .chat-name { font-size: 15px !important; font-weight: 600 !important; color: #111827 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.2 !important; }
     .chat-header-center-wrap .chat-typing { font-size: 11px !important; color: #9CA3AF !important; min-height: 14px !important; line-height: 1.2 !important; }
-    /* 聊天页下首个顶栏横排不换行（body.chat-view 由聊天页注入） */
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type { flex-wrap: nowrap !important; align-items: center !important; gap: 0 !important; }
+    /* 聊天页顶栏：返回|昵称|设置 强制单行横排（含手机端，覆盖 Streamlit 默认纵向堆叠） */
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 0 !important;
+        width: 100% !important;
+    }
     body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:first-child,
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child { flex: 0 0 44px !important; max-width: 48px !important; min-width: 0 !important; }
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:nth-child(2) { flex: 1 1 auto !important; min-width: 0 !important; overflow: hidden !important; }
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child {
+        flex-shrink: 0 !important;
+        flex: 0 0 44px !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        max-width: 48px !important;
+    }
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:nth-child(2) {
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+    }
+    @media (max-width: 640px) {
+        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+        }
+        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:first-child,
+        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child {
+            flex: 0 0 40px !important;
+            min-width: 40px !important;
+        }
+    }
+    /* 聊天页顶栏固定：昵称栏（返回|昵称|设置）不随消息滚动 */
+    body.chat-view .block-container [data-testid="stVerticalBlock"]:has([data-testid="stHorizontalBlock"]:first-of-type) {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 100 !important;
+        background: #F0F2F5 !important;
+        padding-bottom: 6px !important;
+        box-shadow: 0 1px 0 0 rgba(0,0,0,0.08);
+    }
     /* 4. 聊天气泡 - 移动端进一步优化宽度 */
     .chat-bubble-row { 
         display: flex; 
