@@ -3,6 +3,7 @@ from openai import OpenAI
 import time
 import re
 import json
+import os
 from PIL import Image
 import base64
 from datetime import datetime
@@ -35,7 +36,7 @@ st.markdown("""
     window.addEventListener('load', () => {
         document.body.style.width = '100vw';
         document.body.style.overflowX = 'hidden';
-        // 强制重绘导航栏横向块
+        document.body.classList.remove('chat-view'); // 非聊天页时移除，由聊天页再添加
         const horizontalBlocks = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
         horizontalBlocks.forEach(blk => {
             blk.style.width = '100vw';
@@ -68,7 +69,7 @@ st.markdown("""
     }
     .block-container { 
         padding-top: 0.8rem !important; 
-        padding-bottom: 80px !important; 
+        padding-bottom: 1.5rem !important; 
         max-width: 100vw !important; /* 核心：主容器宽度100vw */
         width: 100% !important;
         margin: 0 auto !important;
@@ -83,22 +84,40 @@ st.markdown("""
         max-width: 100vw !important;
         overflow-x: hidden !important;
     }
-    
-    /* 3. 底部导航栏 - 保留横向布局，强制适配手机 */
-    .nav-wrapper {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: #FFFFFF;
-        border-top: 1px solid #E5E7EB;
-        z-index: 9999; /* 提高层级，避免被遮挡 */
-        padding: 6px 0 !important;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.03);
-        width: 100vw !important;
-        max-width: 100vw !important;
-        overflow-x: hidden !important;
+    /* 2.1 左上角菜单栏 - 点击召唤左侧导航 */
+    .nav-top-bar { margin-bottom: 4px !important; }
+    .nav-top-title { font-size: 1rem !important; color: #6B7280 !important; font-weight: 600 !important; }
+    /* 3. 聊天详情页顶栏 - 单行横向，贴合聊天习惯，移动端不纵向堆叠 */
+    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"]:first-child,
+    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 0 !important;
     }
+    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"],
+    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"] {
+        min-width: 0 !important;
+    }
+    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:first-child,
+    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:last-child,
+    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:first-child,
+    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:last-child {
+        flex: 0 0 44px !important;
+        max-width: 48px !important;
+    }
+    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2),
+    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2) {
+        flex: 1 1 auto !important;
+        overflow: hidden !important;
+    }
+    .chat-header-center-wrap { display: flex !important; align-items: center !important; justify-content: center !important; flex-direction: column !important; gap: 0 !important; min-height: 40px !important; text-align: center !important; overflow: hidden !important; }
+    .chat-header-center-wrap .chat-name { font-size: 15px !important; font-weight: 600 !important; color: #111827 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.2 !important; }
+    .chat-header-center-wrap .chat-typing { font-size: 11px !important; color: #9CA3AF !important; min-height: 14px !important; line-height: 1.2 !important; }
+    /* 聊天页下首个顶栏横排不换行（body.chat-view 由聊天页注入） */
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type { flex-wrap: nowrap !important; align-items: center !important; gap: 0 !important; }
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:first-child,
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child { flex: 0 0 44px !important; max-width: 48px !important; min-width: 0 !important; }
+    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:nth-child(2) { flex: 1 1 auto !important; min-width: 0 !important; overflow: hidden !important; }
     /* 4. 聊天气泡 - 移动端进一步优化宽度 */
     .chat-bubble-row { 
         display: flex; 
@@ -179,45 +198,7 @@ st.markdown("""
         font-weight: 500; 
         margin-right: 4px; 
     }
-    /* 6. 底部导航按钮 - 核心：横向均分，不溢出 */
-    .nav-wrapper [data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: center !important;
-        justify-content: space-around !important; /* 按钮均匀分布 */
-        width: 100vw !important;
-        max-width: 100vw !important;
-        gap: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow-x: hidden !important;
-    }
-    .nav-wrapper [data-testid="column"] {
-        flex: 1 1 25% !important; /* 4个按钮，各占25% */
-        width: 25% !important;
-        max-width: 25% !important;
-        padding: 0 2px !important;
-        margin: 0 !important;
-    }
-    .nav-wrapper .stButton>button {
-        border-radius: 10px !important;
-        padding: 6px 2px !important;
-        font-size: 10px !important; /* 移动端导航文字更小 */
-        color: #6B7280 !important;
-        background-color: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        font-weight: 500;
-        width: 100% !important;
-        white-space: nowrap !important; /* 文字不换行 */
-        text-align: center !important;
-    }
-    .nav-wrapper .stButton>button[kind="primary"] {
-        background-color: #EFF6FF !important;
-        color: #3B82F6 !important;
-        font-weight: 600;
-    }
-    /* 7. 普通按钮 - 保留原设计 */
+    /* 6. 普通按钮 - 保留原设计 */
     .stButton>button { 
         border-radius: 0 !important; 
         text-align: left !important;
@@ -410,10 +391,6 @@ st.markdown("""
             padding: 10px 12px !important;
             font-size: 13px !important;
         }
-        .nav-wrapper .stButton>button {
-            font-size: 9px !important;
-            padding: 4px 0 !important;
-        }
         .chat-item {
             padding: 6px 4px !important;
         }
@@ -435,6 +412,16 @@ def init_supabase() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 supabase = init_supabase()
+
+# 持久登录 Cookie：同一设备只需登录一次，关闭浏览器后再打开仍保持登录（除非主动退出）
+from streamlit_cookies_manager import EncryptedCookieManager
+try:
+    _cookie_secret = getattr(st.secrets, "COOKIES_PASSWORD", None) or os.environ.get("COOKIES_PASSWORD", "echoem-remember-secret")
+except Exception:
+    _cookie_secret = os.environ.get("COOKIES_PASSWORD", "echoem-remember-secret")
+cookies = EncryptedCookieManager(prefix="echoem/", password=_cookie_secret)
+if not cookies.ready():
+    st.stop()
 
 import bcrypt
 
@@ -709,11 +696,45 @@ def update_memory_bank(char, user_msg, ai_response):
 
 # ===================== 2. 身份验证 =====================
 
+def try_restore_session_from_cookie():
+    """从持久化 Cookie 恢复登录状态（同一设备再次打开网页时免登录）"""
+    val = cookies.get("echoem_login")
+    if not val:
+        return False
+    try:
+        data = json.loads(val)
+        if data.get("exp", 0) <= time.time():
+            return False  # 已过期
+        username = data.get("username")
+        if not username:
+            return False
+        res = supabase.table("user_data").select("*").eq("username", username).execute()
+        if not res.data:
+            return False
+        row = res.data[0]
+        characters = row.get("characters") or []
+        for char in characters:
+            if "memory_bank" not in char:
+                char["memory_bank"] = {"core_memories": [], "recent_context": []}
+        st.session_state.update({
+            "password_correct": True,
+            "username": username,
+            "user_profile": row.get("profile") or {},
+            "characters": characters,
+            "moments": row.get("moments") or []
+        })
+        return True
+    except Exception:
+        return False
+
 def validate_username(username):
     """验证账号名是否为英文字母或数字"""
     return bool(re.match(r'^[a-zA-Z0-9]+$', username))
 
 def check_password():
+    # 未登录时先尝试从持久化 Cookie 恢复（同一设备再次打开直接进主页）
+    if "password_correct" not in st.session_state and try_restore_session_from_cookie():
+        st.rerun()
     if "password_correct" not in st.session_state:
         # 优化登录页面布局
         st.markdown("""
@@ -741,7 +762,10 @@ def check_password():
                                 "core_memories": [],
                                 "recent_context": []
                             }
-                    
+                    # 持久登录：写入 Cookie，30 天内同一设备免登录
+                    login_payload = json.dumps({"username": u, "exp": time.time() + 30 * 24 * 3600})
+                    cookies["echoem_login"] = login_payload
+                    cookies.save()
                     st.session_state.update({
                         "password_correct":True, 
                         "username":u, 
@@ -830,6 +854,7 @@ def get_api_info(char):
 if "active_tab" not in st.session_state: st.session_state.active_tab = "Echoem"
 if "view_mode" not in st.session_state: st.session_state.view_mode = "main"
 if "reply_to_comment" not in st.session_state: st.session_state.reply_to_comment = {}
+if "nav_drawer_open" not in st.session_state: st.session_state.nav_drawer_open = False
 
 # ===================== 4. 朋友圈 AI 互动引擎 =====================
 
@@ -1011,29 +1036,27 @@ def render_chat_session():
         }}
         </style>''', unsafe_allow_html=True)
 
-    # 聊天头部：更紧凑的顶部栏，左右为返回/设置按钮，中间为昵称与“对方正在输入中...”提示
-    c1, c2, c3 = st.columns([0.8, 3.4, 0.8])
+    # 聊天头部：单行顶栏（返回 | 昵称+状态 | 设置），移动端保持横向不堆叠
+    st.markdown(
+        "<script>document.body.classList.add('chat-view');</script><div class=\"chat-header-marker\" aria-hidden=\"true\"></div>",
+        unsafe_allow_html=True
+    )
+    c1, c2, c3 = st.columns([0.5, 3, 0.5])
     with c1:
         st.button("⬅️", on_click=lambda: st.session_state.update({"view_mode":"main"}), type="tertiary", use_container_width=True)
     with c2:
         safe_char_name = safe_text(char.get("name", ""))
         st.markdown(
-            f"<div style='text-align:center; margin:2px 0 0 0;'>"
-            f"<div style='font-size:16px; font-weight:600; color:#111827; line-height:1.1;'>{safe_char_name}</div>"
-            f"<div id='typing-indicator' style='font-size:11px; color:#9CA3AF; margin-top:1px; min-height:14px;'></div>"
+            f"<div class='chat-header-center-wrap'>"
+            f"<span class='chat-name'>{safe_char_name}</span>"
+            f"<span id='typing-indicator' class='chat-typing'></span>"
             f"</div>",
             unsafe_allow_html=True
         )
-        # 在昵称容器内部占位“对方正在输入中...”
         typing_placeholder = st.empty()
     with c3:
         st.button("⚙️", on_click=lambda: st.session_state.update({"view_mode":"edit_char"}), type="tertiary", use_container_width=True)
-    
-    # 更紧凑的分割线
-    st.markdown(
-        "<hr style='margin:4px 0 6px 0; border:none; border-top:1px solid #E5E7EB;'/>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<hr style='margin:4px 0 6px 0; border:none; border-top:1px solid #E5E7EB;'/>", unsafe_allow_html=True)
     
     # 消息循环
     user_av = get_avatar_display(st.session_state.user_profile.get("avatar"), "👤")
@@ -1715,42 +1738,75 @@ def render_profile_page():
                         st.error(msg, icon="❌")
         with col3:
             if st.form_submit_button("退出登录", use_container_width=True, type="secondary"): 
+                if "echoem_login" in cookies:
+                    del cookies["echoem_login"]
+                    cookies.save()
                 st.session_state.clear()
                 st.rerun()
 
 # ===================== 6. 路由与固定导航 =====================
 
-# 确保在所有页面都渲染底部导航栏
-main_content_container = st.container()
+NAV_ITEMS = [("💬 消息", "Echoem"), ("👥 通讯录", "通讯录"), ("🌍 发现", "发现"), ("👤 我", "我")]
 
-with main_content_container:
-    if st.session_state.view_mode == "chat":
-        render_chat_session()
-    elif st.session_state.view_mode == "edit_char":
-        render_edit_persona()
-    else:
-        # 页面主体内容
-        if st.session_state.active_tab == "Echoem": 
-            render_chat_list_page()
-        elif st.session_state.active_tab == "通讯录": 
-            render_contacts_page()
-        elif st.session_state.active_tab == "发现": 
-            render_moments_page()
-        elif st.session_state.active_tab == "我": 
-            render_profile_page()
+# 左上角菜单按钮：点击后在左侧召唤导航
+col_menu, col_title = st.columns([0.1, 0.9])
+with col_menu:
+    if st.button("☰", key="nav_menu_toggle", use_container_width=True, type="secondary", help="打开导航"):
+        st.session_state.nav_drawer_open = not st.session_state.nav_drawer_open
+        st.rerun()
+with col_title:
+    tab_titles = {"Echoem": "消息", "通讯录": "通讯录", "发现": "发现", "我": "我"}
+    current = tab_titles.get(st.session_state.active_tab, "Echoem")
+    st.markdown(f"<div class=\"nav-top-title\">{current}</div>", unsafe_allow_html=True)
 
-# 固定底部导航栏渲染（确保在所有页面都显示）
-st.markdown('<div class="nav-wrapper">', unsafe_allow_html=True)
-cols = st.columns(4)
-nav_items = [("💬 消息", "Echoem"), ("👥 通讯录", "通讯录"), ("🌍 发现", "发现"), ("👤 我", "我")]
-for i, (label, tab_name) in enumerate(nav_items):
-    with cols[i]:
-        if st.button(
-            label, 
-            key=f"nav_{tab_name}", 
-            use_container_width=True, 
-            type="primary" if st.session_state.active_tab == tab_name else "tertiary"
-        ):
-            st.session_state.active_tab = tab_name
+if st.session_state.nav_drawer_open:
+    col_drawer, col_main = st.columns([0.28, 0.72])
+    with col_drawer:
+        st.markdown("### 🪽 导航")
+        st.caption("选择要去的页面")
+        st.markdown("---")
+        for label, tab_name in NAV_ITEMS:
+            if st.button(
+                label,
+                key=f"nav_drawer_{tab_name}",
+                use_container_width=True,
+                type="primary" if st.session_state.active_tab == tab_name else "tertiary"
+            ):
+                st.session_state.active_tab = tab_name
+                st.session_state.nav_drawer_open = False
+                st.rerun()
+        if st.button("✕ 关闭", key="nav_drawer_close", use_container_width=True):
+            st.session_state.nav_drawer_open = False
             st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
+    with col_main:
+        main_content_container = st.container()
+        with main_content_container:
+            if st.session_state.view_mode == "chat":
+                render_chat_session()
+            elif st.session_state.view_mode == "edit_char":
+                render_edit_persona()
+            else:
+                if st.session_state.active_tab == "Echoem":
+                    render_chat_list_page()
+                elif st.session_state.active_tab == "通讯录":
+                    render_contacts_page()
+                elif st.session_state.active_tab == "发现":
+                    render_moments_page()
+                elif st.session_state.active_tab == "我":
+                    render_profile_page()
+else:
+    main_content_container = st.container()
+    with main_content_container:
+        if st.session_state.view_mode == "chat":
+            render_chat_session()
+        elif st.session_state.view_mode == "edit_char":
+            render_edit_persona()
+        else:
+            if st.session_state.active_tab == "Echoem":
+                render_chat_list_page()
+            elif st.session_state.active_tab == "通讯录":
+                render_contacts_page()
+            elif st.session_state.active_tab == "发现":
+                render_moments_page()
+            elif st.session_state.active_tab == "我":
+                render_profile_page()
