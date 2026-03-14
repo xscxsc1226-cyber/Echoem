@@ -130,9 +130,6 @@ st.markdown("""
             margin: 4px 0 8px 0 !important;
             font-size: 1rem !important;
         }
-        .chat-item {
-            padding: 6px 4px !important;
-        }
         .chat-bubble-row { margin-bottom: 8px !important; }
         .chat-bubble-content { padding: 10px 12px !important; }
     }
@@ -147,129 +144,99 @@ st.markdown("""
     /* 2.1 左上角菜单栏 - 点击召唤左侧导航 */
     .nav-top-bar { margin-bottom: 4px !important; }
     .nav-top-title { font-size: 1rem !important; color: #6B7280 !important; font-weight: 600 !important; }
-    /* 3. 聊天详情页顶栏 - 单行横向，贴合聊天习惯，移动端不纵向堆叠 */
-    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"]:first-child,
-    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        align-items: center !important;
+    /* =========================================
+       1. 修复会话列表重合问题（通过 st.container 锁定）
+       ========================================= */
+    /* 选中只包含特定按钮的独立容器区块 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] button[title^="jump_"]) {
+        position: relative !important;
+        height: 72px !important; /* 锁死高度 */
+        margin-bottom: 0 !important;
+        padding: 0 !important;
         gap: 0 !important;
     }
-    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"],
-    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"] {
-        min-width: 0 !important;
-    }
-    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:first-child,
-    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:last-child,
-    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:first-child,
-    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:last-child {
-        flex: 0 0 44px !important;
-        max-width: 48px !important;
-    }
-    .chat-header-marker ~ [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2),
-    .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2) {
-        flex: 1 1 auto !important;
-        overflow: hidden !important;
-    }
-    .chat-header-center-wrap { display: flex !important; align-items: center !important; justify-content: center !important; flex-direction: column !important; gap: 0 !important; min-height: 40px !important; text-align: center !important; overflow: hidden !important; }
-    .chat-header-center-wrap .chat-name { font-size: 15px !important; font-weight: 600 !important; color: #111827 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.2 !important; }
-    .chat-header-center-wrap .chat-typing { font-size: 11px !important; color: #9CA3AF !important; min-height: 14px !important; line-height: 1.2 !important; }
-    /* 聊天页顶栏：返回|昵称|设置 强制单行横排（含手机端，覆盖 Streamlit 默认纵向堆叠） */
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: center !important;
-        gap: 0 !important;
-        width: 100% !important;
-    }
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:first-child,
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child {
-        flex-shrink: 0 !important;
-        flex: 0 0 44px !important;
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 48px !important;
-    }
-    body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:nth-child(2) {
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
-        overflow: hidden !important;
-    }
-    @media (max-width: 640px) {
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-        }
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:first-child,
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child {
-            flex: 0 0 40px !important;
-            min-width: 40px !important;
-        }
-    }
-    /* 聊天页顶栏固定：昵称栏透明底色，不随消息滚动 */
-    body.chat-view .block-container [data-testid="stVerticalBlock"]:has([data-testid="stHorizontalBlock"]:first-of-type) {
-        position: sticky !important;
+
+    /* 容器里的第一个元素：人物框 HTML (置于底层) */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] button[title^="jump_"]) > [data-testid="stElementContainer"]:nth-child(1) {
+        position: absolute !important;
         top: 0 !important;
-        z-index: 100 !important;
-        background: transparent !important;
-        padding-bottom: 6px !important;
-        box-shadow: none !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 72px !important;
+        z-index: 1 !important;
     }
-    body.chat-view [data-testid="stPopover"] > button {
+
+    /* 容器里的第二个元素：按钮 (置于顶层) */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] button[title^="jump_"]) > [data-testid="stElementContainer"]:nth-child(2) {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 72px !important;
+        z-index: 10 !important;
+    }
+
+    /* 按钮透明化 & 全覆盖 */
+    button[title^="jump_"] {
+        width: 100% !important;
+        height: 72px !important;
+        min-height: 72px !important;
+        background: transparent !important;
+        color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        cursor: pointer !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 移动端点击反馈 */
+    button[title^="jump_"]:active {
+        background: rgba(0,0,0,0.05) !important;
+    }
+
+    /* =========================================
+       2. 详情页顶部导航栏（仅昵称下拉，无返回键）
+       ========================================= */
+    /* 顶栏行：第一列含 popover 的横排 */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:first-child [data-testid="stPopover"]) {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        width: 100% !important;
+        flex-wrap: nowrap !important;
+    }
+
+    /* 第一列：昵称 popover，撑满并居中 */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:first-child [data-testid="stPopover"]) > [data-testid="column"]:nth-child(1) {
+        flex: 1 1 auto !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        width: auto !important;
+    }
+
+    /* 第二列：占位符，保持平衡 */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:first-child [data-testid="stPopover"]) > [data-testid="column"]:nth-child(2) {
+        flex: 0 0 50px !important;
+        width: 50px !important;
+        min-width: 50px !important;
+    }
+
+    /* 顶栏昵称：透明可点击按钮，点击展开下拉菜单 */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:first-child [data-testid="stPopover"]) [data-testid="stPopover"] > button {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
+        color: #111827 !important;
+        font-size: 1.125rem !important;
+        font-weight: 600 !important;
+        justify-content: center !important;
     }
-    @media (max-width: 768px) {
-        body.chat-view .block-container [data-testid="stVerticalBlock"]:has([data-testid="stHorizontalBlock"]:first-of-type) {
-            padding-bottom: 2px !important;
-            padding-left: 0 !important;
-            margin-left: 0 !important;
-        }
-        /* 手机端：顶栏左对齐，取消左右空列占位，昵称与会话页面对齐 */
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type,
-        body.chat-view .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] {
-            justify-content: flex-start !important;
-            margin-left: 0 !important;
-            padding-left: 0 !important;
-            width: 100% !important;
-        }
-        body.chat-view .chat-header-marker + [data-testid="stVerticalBlock"] {
-            margin-left: 0 !important;
-            padding-left: 0 !important;
-        }
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:first-child,
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:last-child,
-        body.chat-view .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="column"]:first-child,
-        body.chat-view .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="column"]:last-child {
-            flex: 0 0 0 !important;
-            width: 0 !important;
-            min-width: 0 !important;
-            max-width: 0 !important;
-            overflow: hidden !important;
-        }
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"]:nth-child(2),
-        body.chat-view .chat-header-marker + [data-testid="stVerticalBlock"] [data-testid="column"]:nth-child(2) {
-            flex: 1 1 auto !important;
-            max-width: 100% !important;
-            text-align: left !important;
-            margin-left: 0 !important;
-            padding-left: 0 !important;
-        }
-        body.chat-view .block-container [data-testid="stHorizontalBlock"]:first-of-type [data-testid="column"] .stButton > button,
-        body.chat-view [data-testid="stPopover"] button {
-            padding: 2px 6px !important;
-            min-height: 32px !important;
-        }
-        /* 顶部昵称栏、popover 触发按钮不撑破屏 */
-        body.chat-view [data-testid="stPopover"] {
-            max-width: 100% !important;
-        }
-        body.chat-view [data-testid="stPopover"] > button {
-            width: 100% !important;
-            max-width: 100% !important;
-        }
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:first-child [data-testid="stPopover"]) [data-testid="stPopover"] > button:hover {
+        background: rgba(0,0,0,0.05) !important;
     }
+
     /* 4. 聊天气泡 - 移动端进一步优化宽度 */
     .chat-bubble-row { 
         display: flex; 
@@ -392,56 +359,6 @@ st.markdown("""
     }
     .auth-title { font-size: 24px !important; font-weight: 700; color: #111827; margin-bottom: 8px; }
     .auth-subtitle { color: #6B7280; margin-bottom: 20px !important; font-size: 14px !important; }
-    /* 1. 强制网格重叠：让 HTML 和按钮强行在同一个格子里 */
-    [data-testid="stVerticalBlock"] > div:has(.chat-item-container) {
-        display: grid !important;
-        grid-template-areas: "overlay" !important;
-    }
-
-    .chat-item-container {
-        grid-area: overlay !important;
-        z-index: 1;
-    }
-
-    /* 2. 按钮容器：强行占领视觉层所在的空间 */
-    [data-testid="stElementContainer"]:has(button[title^="jump_"]) {
-        grid-area: overlay !important;
-        z-index: 2 !important; /* 确保在上面 */
-        height: 72px !important;
-        margin: 0 !important;
-    }
-
-    /* 3. 视觉层样式（人物框） */
-    .chat-item {
-        display: flex;
-        align-items: center;
-        padding: 0 16px;
-        background: #FFFFFF;
-        border-bottom: 0.5px solid #E5E5E7;
-        width: 100%;
-        height: 72px;
-        box-sizing: border-box;
-        pointer-events: none; /* 让鼠标穿透它 */
-    }
-
-    /* 4. 透明按钮样式：全透明且铺满 */
-    button[title^="jump_"] {
-        width: 100% !important;
-        height: 72px !important;
-        min-height: 72px !important;
-        background: transparent !important;
-        color: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        cursor: pointer !important;
-        opacity: 0 !important; /* 调试时可以改成 0.1 看看位置 */
-    }
-
-    /* 移动端优化：点击时的反馈感 */
-    button[title^="jump_"]:active {
-        background: rgba(0,0,0,0.05) !important;
-        opacity: 1 !important;
-    }
     /* 11. 收款按钮 - 移动端适配 */
     .receive-btn {
         background-color: #FFFFFF !important;
@@ -562,9 +479,6 @@ st.markdown("""
             max-width: 88% !important;
             padding: 10px 12px !important;
             font-size: 13px !important;
-        }
-        .chat-item {
-            padding: 6px 4px !important;
         }
         .transfer-card {
             min-width: 160px !important;
@@ -1174,7 +1088,6 @@ def handle_moment_interaction(moment, user_text, target_char_name=None, reply_to
 
 def render_chat_list_page():
     st.markdown("<h3 style='text-align:center; margin:10px 0;'>消息</h3>", unsafe_allow_html=True)
-
     display_chars = st.session_state.characters or []
     # 类微信：按最近消息条数近似排序（真实项目可存 timestamp）
     def last_ts(c):
@@ -1191,32 +1104,33 @@ def render_chat_list_page():
         return
 
     for char in display_chars:
-        # 获取头像和最后消息
-        avatar_html = get_avatar_html(char.get("avatar"))
-        last_msg = (char.get("messages", [])[-1]["content"] if char.get("messages") else "暂无消息") or "暂无消息"
-        last_msg = html.escape(str(last_msg)[:18])
-        safe_name = html.escape(char["name"])
+        # 使用 st.container() 将视觉层和按钮包裹在一个独立的区块中
+        with st.container():
+            avatar_html = get_avatar_html(char.get("avatar"))
+            last_msg = (char.get("messages", [])[-1]["content"] if char.get("messages") else "暂无消息")[:18]
+            last_msg = html.escape(str(last_msg))
+            safe_name = html.escape(char["name"])
 
-        # --- 步骤 1：视觉层（增加外层 div 让 CSS 识别“待重合”区域）---
-        st.markdown(f"""
-        <div class="chat-item-container">
-            <div class="chat-item">
-                <div style="margin-right: 12px;">{avatar_html}</div>
-                <div style="flex-grow: 1; overflow: hidden;">
-                    <div style="font-size: 16px; font-weight: 500; color: #1a1a1a;">{safe_name}</div>
-                    <div style="font-size: 13px; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        {last_msg}
+            # --- 视觉层 HTML ---
+            st.markdown(f"""
+            <div class="chat-item-wrapper">
+                <div style="display: flex; align-items: center; padding: 0 16px; background: #FFFFFF; border-bottom: 0.5px solid #E5E5E7; width: 100%; height: 72px; box-sizing: border-box; pointer-events: none;">
+                    <div style="margin-right: 12px;">{avatar_html}</div>
+                    <div style="flex-grow: 1; overflow: hidden;">
+                        <div style="font-size: 16px; font-weight: 500; color: #1a1a1a; text-align: left;">{safe_name}</div>
+                        <div style="font-size: 13px; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;">
+                            {last_msg}
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-        # --- 步骤 2：交互层（必须紧跟在上面的 markdown 后面）---
-        if st.button("进入", key=f"btn_{char['id']}", help=f"jump_{char['id']}", use_container_width=True):
-            st.session_state.current_char_id = char["id"]
-            st.session_state.view_mode = "chat"
-            st.rerun()
+            # --- 交互层 透明按钮 ---
+            if st.button("进入", key=f"btn_{char['id']}", help=f"jump_{char['id']}", use_container_width=True):
+                st.session_state.current_char_id = char["id"]
+                st.session_state.view_mode = "chat"
+                st.rerun()
 
 def render_chat_session():
     char = get_current_char()
@@ -1237,21 +1151,23 @@ def render_chat_session():
         }}
         </style>''', unsafe_allow_html=True)
 
-    # 居中显示昵称，点击后弹出悬浮菜单（手机端通过 CSS 左对齐与会话列表一致）
-    st.markdown("<script>document.body.classList.add('chat-view');</script>", unsafe_allow_html=True)
-    st.markdown('<div class="chat-header-marker" aria-hidden="true"></div>', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 4, 1])
-    with col2:
-        # st.popover 会在点击后弹出一个气泡菜单，完美替代纵向堆叠
-        with st.popover(char["name"], use_container_width=True):
-            if st.button("⬅️ 返回消息列表", use_container_width=True):
+    # 头部导航栏（仅昵称 + 下拉菜单，无返回键）
+    col1, col2 = st.columns([6, 1])
+    with col1:
+        safe_char_name = safe_text(char["name"])
+        with st.popover(safe_char_name, use_container_width=True):
+            if st.button("🔙返回消息列表", use_container_width=True):
                 st.session_state.view_mode = "main"
+                st.session_state.current_char_id = None
                 st.rerun()
-            if st.button("⚙️ 角色设置", use_container_width=True):
+            if st.button("⚙️修改人物设定", use_container_width=True):
                 st.session_state.view_mode = "edit_char"
                 st.rerun()
-        typing_placeholder = st.empty()
-    st.markdown("<hr style='margin:4px 0 6px 0; border:none; border-top:1px solid #E5E7EB;'/>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("<div style='text-align:right;'></div>", unsafe_allow_html=True)
+
+    st.markdown("<hr style='margin: 5px 0 15px 0;'/>", unsafe_allow_html=True)
+    typing_placeholder = st.empty()
     
     # 消息循环
     user_av = get_avatar_display(st.session_state.user_profile.get("avatar"), "👤")
