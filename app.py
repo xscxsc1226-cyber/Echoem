@@ -610,24 +610,70 @@ def build_system_prompt(char, scene: str = "chat") -> str:
     return "\n\n".join(parts)
 
 def get_context_messages(char):
-    """获取用于API调用的上下文消息（最近10条 + 当前消息）"""
-    memory_bank = char.get("memory_bank", {})
-    recent_context = memory_bank.get("recent_context", [])
-    
-    # 合并最近上下文和当前消息历史，去重并保持顺序
-    all_msgs = recent_context + char.get("messages", [])
-    
-    # 去重：基于content和role
-    seen = set()
-    unique_msgs = []
-    for m in all_msgs:
-        key = (m.get("role"), m.get("content"))
-        if key not in seen:
-            seen.add(key)
-            unique_msgs.append(m)
-    
-    # 返回最后10条
-    return unique_msgs[-10:]
+    """获取用于API调用的上下文消息（仅取聊天记录末尾 N 条，保持顺序，不做内容去重）。"""
+    # 只从聊天记录取上下文，避免把“记忆库 recent_context（派生数据）”混进来造成重复/错位，
+    # 尤其是用户重复发送相同文本时，内容去重会丢掉“最新一条”从而引发回复紊乱。
+    msgs = []
+    for m in char.get("messages", []):
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant"):
+            continue
+        if not content:
+            continue
+        # OpenAI 兼容接口只需要 role/content；过滤掉 transfer 等非对话类型的结构字段
+        msgs.append({"role": role, "content": str(content)})
+    return msgs[-12:]
+
+def split_ai_reply_into_bubbles(text: str, *, max_chars: int = 34, max_bubbles: int = 6):
+    """将 AI 长回复切成多个更像聊天气泡的短句。
+
+    规则：
+    - 若包含 '｜'：按 '｜' 或换行优先切分（用户可用该符号精确控制分段）
+    - 否则：按中英文句末标点切句，再按 max_chars 合并成若干气泡
+    """
+    if not text:
+        return []
+    raw = str(text).strip()
+    if not raw:
+        return []
+
+    # 1) 用户/模型显式用 '｜' 分段：优先使用
+    if "｜" in raw:
+        parts = [p.strip() for p in re.split(r"[｜\n]+", raw) if p and p.strip()]
+        return parts[:max_bubbles] if parts else []
+
+    # 2) 句子级切分：保留标点
+    # 将连续空白压缩为单空格，避免异常断句
+    s = re.sub(r"\s+", " ", raw).strip()
+    # 以句末标点为分隔（中文/英文）
+    chunks = re.findall(r"[^。！？!?…；;]+[。！？!?…；;]?", s)
+    chunks = [c.strip() for c in chunks if c and c.strip()]
+    if not chunks:
+        chunks = [s]
+
+    # 3) 合并：每个气泡不超过 max_chars（尽量），同时限制数量
+    bubbles = []
+    buf = ""
+    for c in chunks:
+        if not buf:
+            buf = c
+            continue
+        if len(buf) + 1 + len(c) <= max_chars:
+            buf = f"{buf} {c}".strip()
+        else:
+            bubbles.append(buf.strip())
+            buf = c
+            if len(bubbles) >= max_bubbles - 1:
+                break
+    if buf and len(bubbles) < max_bubbles:
+        bubbles.append(buf.strip())
+
+    # 兜底：若仍只有一个超长气泡，按长度硬切
+    if len(bubbles) == 1 and len(bubbles[0]) > max_chars * 2:
+        t = bubbles[0]
+        bubbles = [t[i : i + max_chars] for i in range(0, len(t), max_chars)][:max_bubbles]
+    return [b for b in bubbles if b]
 
 def extract_memories(char, user_msg, ai_response):
     """让AI判断并提取重要记忆，返回需要存入核心记忆的内容列表"""
@@ -754,12 +800,52 @@ def update_memory_bank(char, user_msg, ai_response):
     
     memory_bank["recent_context"] = recent_context
     
-    # 2. 提取核心记忆（异步，不阻塞回复）
-    new_memories = extract_memories(char, user_msg, ai_response)
-    if new_memories:
-        memory_bank["core_memories"] = new_memories
-    
+    # 2. 核心记忆提取会额外调用一次模型，放到“后处理”里做，避免阻塞主回复
     char["memory_bank"] = memory_bank
+
+def _enqueue_chat_postprocess(char_id: str, user_msg: str, ai_raw: str):
+    """把耗时的记忆提取/好感度评估放到下一轮渲染执行，缩短用户等待时间。"""
+    if "pending_chat_postprocess" not in st.session_state:
+        st.session_state.pending_chat_postprocess = {}
+    st.session_state.pending_chat_postprocess[char_id] = {
+        "user_msg": user_msg,
+        "ai_raw": ai_raw,
+        "ts": time.time(),
+    }
+
+def _run_chat_postprocess_if_any(char):
+    """在页面渲染时执行一次后处理（若有），失败静默，不影响聊天主流程。"""
+    pending = st.session_state.get("pending_chat_postprocess", {})
+    if not pending:
+        return
+    char_id = char.get("id")
+    if not char_id or char_id not in pending:
+        return
+    job = pending.get(char_id) or {}
+    user_msg = (job.get("user_msg") or "").strip()
+    ai_raw = (job.get("ai_raw") or "").strip()
+    # 先弹出，避免异常导致重复执行
+    try:
+        pending.pop(char_id, None)
+        st.session_state.pending_chat_postprocess = pending
+    except Exception:
+        pass
+    if not user_msg or not ai_raw:
+        return
+    try:
+        # 1) 提取核心记忆（额外一次模型调用）
+        new_memories = extract_memories(char, user_msg, ai_raw)
+        if new_memories:
+            char.setdefault("memory_bank", {})
+            char["memory_bank"]["core_memories"] = new_memories
+        # 2) 好感度评估（额外一次模型调用）
+        delta = compute_favorability_change(char, user_msg, ai_raw)
+        if delta != 0:
+            fav = int(char.get("favorability", 30))
+            char["favorability"] = max(0, min(100, fav + delta))
+        save_cloud_data()
+    except Exception:
+        return
 
 def compute_favorability_change(char, user_msg, ai_response):
     """由 AI 判断本次对话是否导致好感度变化，返回 -5～5 的增量（重大事项可超出），无需变化则返回 0。"""
@@ -844,9 +930,13 @@ def check_password():
     # 1）等待 cookies.ready() 为 True，再决定是否有可用登录信息；
     # 2）只在确认 cookies.ready() 后做一次最终判定，避免在登录页输入过程中
     #    反复被之前账号“抢回去”。
+    # 用户主动退出后必须禁止用旧 Cookie 自动登回，否则注销后切到「注册」等操作
+    # 会在下一次 rerun 时又被 Cookie 抢回原账号。
     if "password_correct" not in st.session_state:
         if not st.session_state.get("auto_restore_finalized", False):
-            if cookies.ready():
+            if st.session_state.get("suppress_auto_restore"):
+                st.session_state["auto_restore_finalized"] = True
+            elif cookies.ready():
                 if try_restore_session_from_cookie():
                     # 成功从 Cookie 恢复，直接进入主页
                     st.session_state["auto_restore_finalized"] = True
@@ -896,6 +986,7 @@ def check_password():
                     login_payload = json.dumps({"username": u, "exp": time.time() + 30 * 24 * 3600})
                     cookies["narratio_login"] = login_payload
                     cookies.save()
+                    st.session_state.pop("suppress_auto_restore", None)
                     st.session_state.update({
                         "password_correct":True, 
                         "username":u, 
@@ -958,7 +1049,7 @@ if not check_password(): st.stop()
 # 支持的 LLM 提供商（OpenAI 兼容接口）
 LLM_PROVIDERS = [
     {"id": "deepseek", "name": "DeepSeek", "base_url": "https://api.deepseek.com", "default_model": "deepseek-chat",
-     "models": ["deepseek-chat", "deepseek-reasoner", "deepseek-r1"]},
+     "models": ["deepseek-chat", "deepseek-reasoner"]},
     {"id": "kimi", "name": "Kimi (月之暗面)", "base_url": "https://api.moonshot.cn/v1", "default_model": "moonshot-v1-8k",
      "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]},
     {"id": "openai", "name": "OpenAI (GPT)", "base_url": "https://api.openai.com/v1", "default_model": "gpt-4o-mini",
@@ -977,6 +1068,14 @@ def _get_provider(provider_id):
             return p
     return LLM_PROVIDERS[0]
 
+def _normalize_model_name(provider_id, model_name):
+    """将历史中错误或非官方名称映射为当前服务商可用的 model id。"""
+    if not model_name:
+        return model_name
+    if provider_id == "deepseek" and model_name == "deepseek-r1":
+        return "deepseek-reasoner"
+    return model_name
+
 def get_current_char():
     char_id = st.session_state.get("current_char_id")
     return next((c for c in st.session_state.characters if c["id"] == char_id), None)
@@ -991,12 +1090,13 @@ def get_api_info(char):
     provider_id = st.session_state.user_profile.get("global_provider", "deepseek")
     provider = _get_provider(provider_id)
     # 先取全局模型；若不属于当前服务商，自动回退默认模型
-    global_model = st.session_state.user_profile.get("global_model")
+    raw_global_model = st.session_state.user_profile.get("global_model")
+    global_model = _normalize_model_name(provider_id, raw_global_model)
     if not global_model or global_model not in provider["models"]:
         global_model = provider["default_model"]
 
     # 角色自定义模型仅在属于当前服务商时生效，避免切换服务商后仍卡在旧模型
-    char_model = (char.get("model") or "").strip()
+    char_model = _normalize_model_name(provider_id, (char.get("model") or "").strip())
     mod = char_model if char_model and char_model in provider["models"] else global_model
     return key, mod, provider["base_url"]
 
@@ -1197,7 +1297,7 @@ def render_chat_session():
         st.session_state.view_mode = "main"
         st.rerun()
         return
-        
+
     # 背景定制保留（优化背景透明度）
     if char.get('bg'):
         st.markdown(f'''
@@ -1384,9 +1484,7 @@ def render_chat_session():
         # 玩家消息也清理括号动作，防止引导对话变成“动作剧本”
         clean = re.sub(r"[（(][^）)]*[）)]", "", prompt).strip() or prompt
         char["messages"].append({"role": "user", "content": clean})
-        # 立即保存并刷新，减少延迟
-        save_cloud_data()
-        st.rerun()
+        # 不立即 rerun，直接在本轮继续生成 AI 回复，减少一次全屏“发白”与等待
 
     if char["messages"] and char["messages"][-1]["role"] == "user":
         key, mod, base_url = get_api_info(char)
@@ -1405,15 +1503,10 @@ def render_chat_session():
                 messages=[{"role": "system", "content": sys_prompt}] + context_msgs
             )
             raw = resp.choices[0].message.content or ""
-            
-            # 更新记忆库（在显示之前完成）
+
+            # 先把“轻量”的最近上下文更新掉（不额外调用模型）
             user_msg = char["messages"][-1]["content"]
             update_memory_bank(char, user_msg, raw)
-            # 好感度：由 AI 判断本轮是否增减
-            delta = compute_favorability_change(char, user_msg, raw)
-            if delta != 0:
-                fav = int(char.get("favorability", 30))
-                char["favorability"] = max(0, min(100, fav + delta))
             
             # 支持转账写法：
             # 1）标准指令：转账卡|金额=XXX|备注=...
@@ -1504,12 +1597,15 @@ def render_chat_session():
                     pending_transfer = None
                     continue
 
-                # 普通文本消息：清理括号动作
+                # 普通文本消息：清理括号动作，并自动切成多个气泡
                 seg_clean = re.sub(r"[（(][^）)]*[）)]", "", seg).strip()
                 if not seg_clean:
                     continue
-                char["messages"].append({"role": "assistant", "content": seg_clean})
-            # 立即保存并刷新，减少延迟
+                for bubble in split_ai_reply_into_bubbles(seg_clean):
+                    char["messages"].append({"role": "assistant", "content": bubble})
+
+            # 立即保存并刷新，减少延迟；耗时的记忆提取/好感度评估放到下一轮做
+            _enqueue_chat_postprocess(char.get("id"), user_msg, raw)
             save_cloud_data()
             st.rerun()
         except Exception as e:
@@ -1522,6 +1618,9 @@ def render_edit_persona():
         st.session_state.view_mode = "main"
         st.rerun()
         return
+
+    # 将耗时后处理移到“人物详情页”执行，避免聊天页回复前阻塞
+    _run_chat_postprocess_if_any(char)
         
     st.markdown(f"<h3 style='margin:12px 0 20px 0; color:#000000; font-weight:600; font-size:1.2rem;'>编辑 {char['name']}</h3>", unsafe_allow_html=True)
     
@@ -2105,40 +2204,37 @@ def render_moments_page():
                         st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # 评论输入框：点击评论后显示，输入框+发送按钮横向布局
+        # 评论输入框：为每条动态默认展示，使用 form 保证移动端“回车/发送”稳定提交
         reply_to_name = st.session_state.get(reply_key, "")
         input_key = f"cm_{m_id}"
-        # 如果上一轮发送后打了清空标记，先在本轮渲染前清理输入框的值
-        if st.session_state.get(f"clear_{input_key}", False):
-            st.session_state.pop(input_key, None)
-            st.session_state[f"clear_{input_key}"] = False
 
-        if reply_to_name or st.session_state.get(f"show_input_{m_id}", False):
-            st.markdown('<div class="comment-input-container">', unsafe_allow_html=True)
-            placeholder = f"回复 {reply_to_name} ..." if reply_to_name else "发表评论..."
-            col1, col2 = st.columns([4,1])
+        st.markdown('<div class="comment-input-container">', unsafe_allow_html=True)
+        placeholder = f"回复 {reply_to_name} ..." if reply_to_name else "发表评论..."
+        with st.form(f"cm_form_{m_id}", clear_on_submit=True):
+            col1, col2 = st.columns([4, 1])
             with col1:
-                # 当前 Streamlit 版本不支持 class_，仅隐藏 label
                 user_q = st.text_input(placeholder, key=input_key, label_visibility="collapsed")
             with col2:
-                send_btn = st.button("发送", key=f"cm_btn_{m_id}", use_container_width=True)
-            
-            if send_btn and user_q.strip():
-                # 默认优先与被回复的AI角色互动
-                target_name = reply_to_name if reply_to_name else None
-                if target_name and not any(c for c in st.session_state.characters if c["name"] == target_name):
-                    # 如果被回复的不是AI角色，找当前动态绑定的AI角色
-                    ai_names = [c.get("name") for c in m.get("comments", []) if c.get("role") == "assistant"]
-                    if ai_names:
-                        target_name = ai_names[0]
-                
-                handle_moment_interaction(m, user_q.strip(), target_char_name=target_name, reply_to_name=reply_to_name)
-                # 清空回复对象和输入框
-                st.session_state[reply_key] = ""
-                st.session_state[f"clear_{input_key}"] = True
-                save_cloud_data()
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+                send_btn = st.form_submit_button("发送", use_container_width=True)
+
+            if send_btn:
+                if not user_q or not user_q.strip():
+                    st.warning("评论内容不能为空", icon="⚠️")
+                else:
+                    # 默认优先与被回复的 AI 角色互动
+                    target_name = reply_to_name if reply_to_name else None
+                    if target_name and not any(c for c in st.session_state.characters if c["name"] == target_name):
+                        # 如果被回复的不是 AI 角色，找当前动态绑定的 AI 角色
+                        ai_names = [c.get("name") for c in m.get("comments", []) if c.get("role") == "assistant"]
+                        if ai_names:
+                            target_name = ai_names[0]
+
+                    handle_moment_interaction(m, user_q.strip(), target_char_name=target_name, reply_to_name=reply_to_name)
+                    # 清空回复对象
+                    st.session_state[reply_key] = ""
+                    save_cloud_data()
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2350,10 +2446,14 @@ def render_profile_page():
                         st.error(msg, icon="❌")
         with col3:
             if st.form_submit_button("退出登录", use_container_width=True):
-                if "narratio_login" in cookies:
-                    del cookies["narratio_login"]
+                try:
+                    if "narratio_login" in cookies:
+                        del cookies["narratio_login"]
                     cookies.save()
+                except Exception:
+                    pass
                 st.session_state.clear()
+                st.session_state["suppress_auto_restore"] = True
                 st.rerun()
 
 # ===================== 6. 路由与固定导航 =====================
